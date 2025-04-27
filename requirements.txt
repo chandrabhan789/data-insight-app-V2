@@ -6,3 +6,4 @@ streamlit-pandas-profiling
 pydantic==1.10.2
 joblib
 setuptools
+pandas_profiling==3.2.0
