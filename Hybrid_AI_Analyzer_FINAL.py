@@ -1,127 +1,66 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import json
-from pathlib import Path
-from pandas_profiling import ProfileReport
-from streamlit_pandas_profiling import st_profile_report
 import io
 
-# ======================
-# 1. Setup: Load/Save Insights
-# ======================
-INSIGHTS_FILE = "saved_insights.json"
+# Streamlit app title
+st.title("AI Insights Generator - Data Analysis")
 
-def load_insights():
-    if Path(INSIGHTS_FILE).exists():
-        with open(INSIGHTS_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_insights(insights):
-    with open(INSIGHTS_FILE, "w") as f:
-        json.dump(insights, f)
-
-# ======================
-# 2. Streamlit App (Insights Only)
-# ======================
-st.set_page_config(page_title="AI Insights Generator", layout="wide")
-st.title("🔍 Pure Insights AI")
-st.markdown("Upload/paste data → Teach AI → Get insights!")
-
-# ----- Data Input -----
-input_method = st.radio("Input Method:", ("📋 Paste Data", "📂 Upload File"))
+# 1. Data Upload or Paste Option
+input_method = st.radio("Select Input Method", ("📋 Paste Data", "📂 Upload File"))
 data = None
 
+# If user selects Paste Data
 if input_method == "📋 Paste Data":
-    raw_text = st.text_area("Paste CSV/JSON:", height=200,
-                          placeholder="CSV Example:\nDay,Sales\nMon,100\nTue,150")
+    raw_text = st.text_area("Paste CSV/JSON Data:", height=200, placeholder="CSV Example:\nDay,Sales\nMon,100\nTue,150")
     if st.button("Parse Data") and raw_text:
         try:
-            # Handle both CSV and JSON format
-            if raw_text.strip()[0] in ['{', '[']:
-                data = pd.read_json(io.StringIO(raw_text))
-            else:
-                data = pd.read_csv(io.StringIO(raw_text))
-            st.success("✅ Data parsed!")
+            # Attempt to parse CSV or JSON
+            data = pd.read_json(io.StringIO(raw_text)) if raw_text.strip()[0] in ['{', '['] else pd.read_csv(io.StringIO(raw_text))
+            st.success("✅ Data parsed successfully!")
         except Exception as e:
-            st.error(f"❌ Error: {e}")
+            st.error(f"❌ Error parsing data: {e}")
+
+# If user selects Upload File
 else:
     uploaded_file = st.file_uploader("Upload Data (CSV/Excel/JSON)", type=["csv", "xlsx", "json"])
     if uploaded_file:
         try:
-            # Handle file formats: CSV, JSON, Excel
-            if uploaded_file.name.endswith('.json'):
-                data = pd.read_json(uploaded_file)
-            elif uploaded_file.name.endswith('.csv'):
+            # Check file extension and load the data
+            if uploaded_file.name.endswith(".csv"):
                 data = pd.read_csv(uploaded_file)
-            else:
+            elif uploaded_file.name.endswith(".xlsx"):
                 data = pd.read_excel(uploaded_file)
-            st.success("✅ Data loaded!")
+            elif uploaded_file.name.endswith(".json"):
+                data = pd.read_json(uploaded_file)
+            st.success("✅ Data loaded successfully!")
         except Exception as e:
-            st.error(f"❌ Error: {e}")
+            st.error(f"❌ Error loading data: {e}")
 
-# Show the first few rows of the data
+# 2. Data Type Identification
 if data is not None:
-    st.dataframe(data.head(3))
+    st.subheader("📊 Data Overview")
+    st.write(data.head())  # Show first few rows of the data
 
-    # ======================
-    # 3. Auto-Generated Basic Insights
-    # ======================
-    st.header("📊 Automatic Findings")
-    
-    # Numeric Columns Summary
+    st.subheader("📋 Data Types")
+    # Identify and display the data types of each column
+    data_types = data.dtypes
+    st.write(data_types)
+
+    # Detect numeric columns
     numeric_cols = data.select_dtypes(include=np.number).columns.tolist()
     if numeric_cols:
-        st.subheader("Numeric Columns")
+        st.subheader("📈 Numeric Columns Summary")
         st.write(data[numeric_cols].describe())
-    
-    # Text Columns Summary
+    else:
+        st.write("No numeric columns found.")
+
+    # Detect categorical (text) columns
     text_cols = data.select_dtypes(include='object').columns.tolist()
     if text_cols:
-        st.subheader("Text Columns")
+        st.subheader("🔤 Text Columns Summary")
         st.write("Unique values per column:")
         for col in text_cols:
             st.write(f"- {col}: {data[col].nunique()} unique values")
-
-    # ======================
-    # 4. Trainable Insights System
-    # ======================
-    st.header("🎓 Teach AI Custom Insights")
-    insights = load_insights()
-
-    # A. Add New Insight
-    new_insight_name = st.text_input("Insight Name (e.g., 'Weekend Drop'):")
-    new_insight_logic = st.text_area("Logic (Python using `data`):",
-                                   placeholder="data[data['Day'].isin(['Sat','Sun'])]['Sales'].mean()")
-    
-    if st.button("💾 Save Insight") and new_insight_name and new_insight_logic:
-        try:
-            # Test if the logic works
-            test_result = eval(new_insight_logic, {'data': data.head()})
-            insights[new_insight_name] = new_insight_logic
-            save_insights(insights)
-            st.success(f"✅ Saved: '{new_insight_name}'!")
-        except Exception as e:
-            st.error(f"❌ Invalid logic: {e}")
-
-    # B. Apply Learned Insights
-    st.subheader("🔎 Your Custom Insights")
-    for name, logic in insights.items():
-        try:
-            result = eval(logic, {'data': data})
-            st.write(f"✅ **{name}**: {result}")
-        except Exception as e:
-            st.error(f"❌ Error in '{name}': {e}")
-
-    # ======================
-    # 5. One-Click Full Report
-    # ======================
-    st.header("📑 Full Data Report")
-    if st.button("📊 Generate Full Analysis"):
-        with st.spinner("Creating report..."):
-            try:
-                profile = ProfileReport(data, explorative=True)
-                st_profile_report(profile)
-            except Exception as e:
-                st.error(f"❌ Error generating the full report: {e}")
+    else:
+        st.write("No text columns found.")
