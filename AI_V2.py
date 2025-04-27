@@ -1,66 +1,124 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import io
+import json
+from io import StringIO
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import LabelEncoder
 
-# Streamlit app title
-st.title("AI Insights Generator - Data Analysis")
+# Save Insights Functionality
+INSIGHTS_FILE = "saved_insights.json"
 
-# 1. Data Upload or Paste Option
-input_method = st.radio("Select Input Method", ("📋 Paste Data", "📂 Upload File"))
+def load_insights():
+    if Path(INSIGHTS_FILE).exists():
+        with open(INSIGHTS_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_insights(insights):
+    with open(INSIGHTS_FILE, "w") as f:
+        json.dump(insights, f)
+
+# Streamlit App
+st.set_page_config(page_title="AI Insights Generator", layout="wide")
+st.title("AI Data Insights Generator")
+st.markdown("Upload your data and get high-level insights!")
+
+# Data Input Method: Paste or Upload
+input_method = st.radio("Input Method", ("📋 Paste Data", "📂 Upload Data"))
 data = None
 
-# If user selects Paste Data
 if input_method == "📋 Paste Data":
-    raw_text = st.text_area("Paste CSV/JSON Data:", height=200, placeholder="CSV Example:\nDay,Sales\nMon,100\nTue,150")
-    if st.button("Parse Data") and raw_text:
+    raw_data = st.text_area("Paste CSV/JSON Data", height=300)
+    if st.button("Parse Data"):
         try:
-            # Attempt to parse CSV or JSON
-            data = pd.read_json(io.StringIO(raw_text)) if raw_text.strip()[0] in ['{', '['] else pd.read_csv(io.StringIO(raw_text))
-            st.success("✅ Data parsed successfully!")
+            if raw_data.strip()[0] in ['{', '[']:  # It's JSON
+                data = pd.read_json(StringIO(raw_data))
+            else:  # It's CSV
+                data = pd.read_csv(StringIO(raw_data))
+            st.success("Data parsed successfully!")
         except Exception as e:
-            st.error(f"❌ Error parsing data: {e}")
+            st.error(f"Error: {e}")
 
-# If user selects Upload File
 else:
     uploaded_file = st.file_uploader("Upload Data (CSV/Excel/JSON)", type=["csv", "xlsx", "json"])
     if uploaded_file:
         try:
-            # Check file extension and load the data
-            if uploaded_file.name.endswith(".csv"):
-                data = pd.read_csv(uploaded_file)
-            elif uploaded_file.name.endswith(".xlsx"):
-                data = pd.read_excel(uploaded_file)
-            elif uploaded_file.name.endswith(".json"):
+            if uploaded_file.name.endswith('.json'):
                 data = pd.read_json(uploaded_file)
-            st.success("✅ Data loaded successfully!")
+            elif uploaded_file.name.endswith('.csv'):
+                data = pd.read_csv(uploaded_file)
+            else:
+                data = pd.read_excel(uploaded_file)
+            st.success("Data loaded successfully!")
         except Exception as e:
-            st.error(f"❌ Error loading data: {e}")
+            st.error(f"Error: {e}")
 
-# 2. Data Type Identification
+# Display the first few rows of the dataset
 if data is not None:
-    st.subheader("📊 Data Overview")
-    st.write(data.head())  # Show first few rows of the data
+    st.dataframe(data.head())
 
-    st.subheader("📋 Data Types")
-    # Identify and display the data types of each column
-    data_types = data.dtypes
-    st.write(data_types)
+    # Data Type Identification
+    st.subheader("Identified Data Types")
+    st.write(data.dtypes)
 
-    # Detect numeric columns
-    numeric_cols = data.select_dtypes(include=np.number).columns.tolist()
-    if numeric_cols:
-        st.subheader("📈 Numeric Columns Summary")
-        st.write(data[numeric_cols].describe())
-    else:
-        st.write("No numeric columns found.")
+    # Analyzing Numeric Columns
+    st.subheader("Summary Statistics for Numeric Data")
+    numeric_data = data.select_dtypes(include=np.number)
+    if not numeric_data.empty:
+        st.write(numeric_data.describe())
 
-    # Detect categorical (text) columns
-    text_cols = data.select_dtypes(include='object').columns.tolist()
-    if text_cols:
-        st.subheader("🔤 Text Columns Summary")
-        st.write("Unique values per column:")
-        for col in text_cols:
-            st.write(f"- {col}: {data[col].nunique()} unique values")
-    else:
-        st.write("No text columns found.")
+    # Trend Identification: Correlation Analysis
+    st.subheader("Correlation Heatmap")
+    if not numeric_data.empty:
+        corr = numeric_data.corr()
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(corr, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+        st.pyplot()
+
+    # Logical Analysis: Checking Missing Data
+    st.subheader("Missing Data")
+    missing_data = data.isnull().sum()
+    st.write(missing_data)
+
+    # Generate High-Level Insights
+    st.subheader("High-Level Insights")
+    insights = []
+    if not numeric_data.empty:
+        for col in numeric_data.columns:
+            insights.append(f"Average of {col}: {numeric_data[col].mean():.2f}")
+            insights.append(f"Max of {col}: {numeric_data[col].max()}")
+            insights.append(f"Min of {col}: {numeric_data[col].min()}")
+
+    if not insights:
+        insights.append("No numeric data available for insights.")
+    
+    for insight in insights[:10]:
+        st.write(insight)
+
+    # Save Insights (Optional)
+    st.subheader("Save Custom Insight")
+    custom_insight = st.text_input("Enter a custom insight name")
+    insight_logic = st.text_area("Enter insight logic (Python expression using 'data')")
+
+    if st.button("Save Insight") and custom_insight and insight_logic:
+        try:
+            # Test if the logic works
+            result = eval(insight_logic, {"data": data})
+            custom_insights = load_insights()
+            custom_insights[custom_insight] = insight_logic
+            save_insights(custom_insights)
+            st.success(f"Insight '{custom_insight}' saved!")
+        except Exception as e:
+            st.error(f"Error in logic: {e}")
+
+    # Applying Saved Insights
+    st.subheader("Applied Custom Insights")
+    custom_insights = load_insights()
+    for name, logic in custom_insights.items():
+        try:
+            result = eval(logic, {"data": data})
+            st.write(f"Insight: {name} - Result: {result}")
+        except Exception as e:
+            st.error(f"Error in custom insight '{name}': {e}")
