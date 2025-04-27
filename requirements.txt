@@ -1,7 +1,6 @@
 streamlit
 pandas
 numpy
-pandas_profiling
 streamlit-pandas-profiling
 pydantic==1.10.2
 joblib
